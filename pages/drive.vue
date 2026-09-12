@@ -228,6 +228,18 @@ async function remove(node: NodeItem) {
   await loadNodes()
 }
 
+/** 预览 Office 文档（docx/xlsx/pptx/pdf 等）。 */
+function preview(node: NodeItem) {
+  navigateTo(`/office/${node.id}?spaceId=${spaceId.value}`)
+}
+
+/** 是否需要 Office 预览按钮。 */
+function canPreview(node: NodeItem) {
+  if (node.kind !== 'file') return false
+  const ext = node.name.rsplit('.', 1)[1]?.toLowerCase() ?? ''
+  return ['doc', 'docx', 'odt', 'rtf', 'txt', 'xls', 'xlsx', 'ods', 'csv', 'ppt', 'pptx', 'odp', 'pdf'].includes(ext)
+}
+
 /** 展示大小。 */
 function formatSize(size: number) {
   if (size < 1024) return `${size} B`
@@ -286,6 +298,7 @@ onMounted(async () => {
             <span v-if="node.kind === 'file'" class="shrink-0 text-xs text-neutral-400">{{ formatSize(node.size) }}</span>
           </div>
           <div class="flex shrink-0 gap-1">
+            <Button v-if="canPreview(node)" variant="ghost" size="sm" @click="preview(node)">预览</Button>
             <Button v-if="node.kind === 'file'" variant="ghost" size="sm" @click="download(node)">下载</Button>
             <Button variant="ghost" size="sm" @click="openShare(node)">分享</Button>
             <Button variant="ghost" size="sm" @click="remove(node)">删除</Button>
