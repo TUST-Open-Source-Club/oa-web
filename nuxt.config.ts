@@ -19,6 +19,8 @@ export default defineNuxtConfig({
     notifyServiceUrl: process.env.NOTIFY_SERVICE_URL || 'http://localhost:8088',
     driveServiceUrl: process.env.DRIVE_SERVICE_URL || 'http://localhost:8087',
     docServiceUrl: process.env.DOC_SERVICE_URL || 'http://localhost:8084',
+    taskServiceUrl: process.env.TASK_SERVICE_URL || 'http://localhost:8083',
+    eventServiceUrl: process.env.EVENT_SERVICE_URL || 'http://localhost:8086',
     public: {
       appName: '社团 OA',
     },
