@@ -35,6 +35,7 @@ const current = ref<NodeDetail | null>(null)
 const draft = ref('')
 const versions = ref<VersionItem[]>([])
 const saving = ref(false)
+const editorRef = ref<{ getMarkdown?: () => string; failed?: boolean } | null>(null)
 const message = ref('')
 const newTitle = ref('')
 const newKind = ref<'page' | 'folder'>('page')
@@ -83,6 +84,10 @@ async function createNode() {
 /** 保存（乐观锁）。 */
 async function save() {
   if (!current.value) return
+  // 编辑器就绪时以 Milkdown 内容为准
+  if (editorRef.value && !editorRef.value.failed) {
+    draft.value = editorRef.value.getMarkdown?.() ?? draft.value
+  }
   saving.value = true
   message.value = ''
   try {
@@ -170,12 +175,15 @@ onMounted(loadSpaces)
           <Button size="sm" :loading="saving" @click="save">保存</Button>
         </div>
         <p v-if="message" class="text-sm text-neutral-500">{{ message }}</p>
-        <textarea
-          v-model="draft"
-          rows="18"
-          class="w-full rounded-[var(--radius-field)] border border-neutral-300 p-3 font-mono text-sm focus:border-primary-500 focus:outline-none"
-          placeholder="# 开始编写 Markdown…"
-        />
+        <MarkdownEditor :key="current.id" ref="editorRef" :model-value="draft" />
+        <details class="text-xs text-neutral-400">
+          <summary class="cursor-pointer">纯文本回退</summary>
+          <textarea
+            v-model="draft"
+            rows="8"
+            class="mt-2 w-full rounded-[var(--radius-field)] border border-neutral-300 p-3 font-mono text-sm focus:border-primary-500 focus:outline-none"
+          />
+        </details>
         <details class="text-sm">
           <summary class="cursor-pointer text-neutral-500">历史版本（{{ versions.length }}）</summary>
           <div class="mt-2 space-y-1">
