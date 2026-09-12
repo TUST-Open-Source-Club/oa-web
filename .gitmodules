@@ -1,3 +1,3 @@
 [submodule "packages"]
 	path = packages
-	url = /Users/sunyu/Projects/club-oa/.repos/club-oa-fe-libs
+	url = https://github.com/TUST-Open-Source-Club/oa-fe-libs.git
