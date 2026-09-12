@@ -14,8 +14,9 @@ export default defineNuxtConfig({
     plugins: [tailwindcss()],
   },
   runtimeConfig: {
-    // 服务端专用：auth 服务内网地址（不进浏览器）
+    // 服务端专用：内部服务地址（不进浏览器）
     authServiceUrl: process.env.AUTH_SERVICE_URL || 'http://localhost:8081',
+    notifyServiceUrl: process.env.NOTIFY_SERVICE_URL || 'http://localhost:8088',
     public: {
       appName: '社团 OA',
     },
