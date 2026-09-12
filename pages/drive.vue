@@ -136,21 +136,64 @@ async function createFolder() {
   }
 }
 
-/** 服务端中转上传（小文件；大文件走分片接口）。 */
+/**
+ * 上传文件：优先 S3 预签名直传（不经过应用服务器）；
+ * 后端不支持预签名（本地存储）时回退服务端中转。
+ */
 async function onUpload(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file || !spaceId.value) return
   uploading.value = true
   errorMessage.value = ''
+  const mime = file.type || 'application/octet-stream'
   try {
-    const query = new URLSearchParams({ name: file.name, mime: file.type || 'application/octet-stream' })
-    if (currentParentId.value) query.set('parentId', currentParentId.value)
-    await api(`spaces/${spaceId.value}/files?${query.toString()}`, {
-      method: 'POST',
-      body: file,
-      headers: { 'content-type': file.type || 'application/octet-stream' },
-    })
+    let presign: { storageKey: string; uploadUrl: string } | null = null
+    try {
+      presign = await api<{ storageKey: string; uploadUrl: string }>(
+        `spaces/${spaceId.value}/files/presign`,
+        {
+          method: 'POST',
+          body: {
+            name: file.name,
+            mime,
+            size: file.size,
+            parentId: currentParentId.value || undefined,
+          },
+        },
+      )
+    } catch (error) {
+      const code = (error as { data?: { code?: string } }).data?.code
+      if (code !== 'DRIVE_PRESIGN_UNSUPPORTED') throw error
+    }
+
+    if (presign) {
+      // 直传对象存储
+      const putResponse = await fetch(presign.uploadUrl, {
+        method: 'PUT',
+        body: file,
+        headers: { 'content-type': mime },
+      })
+      if (!putResponse.ok) throw new Error(`直传失败（${putResponse.status}）`)
+      await api(`spaces/${spaceId.value}/files/complete`, {
+        method: 'POST',
+        body: {
+          storageKey: presign.storageKey,
+          name: file.name,
+          mime,
+          size: file.size,
+          parentId: currentParentId.value || undefined,
+        },
+      })
+    } else {
+      const query = new URLSearchParams({ name: file.name, mime })
+      if (currentParentId.value) query.set('parentId', currentParentId.value)
+      await api(`spaces/${spaceId.value}/files?${query.toString()}`, {
+        method: 'POST',
+        body: file,
+        headers: { 'content-type': mime },
+      })
+    }
     await loadNodes()
   } catch (error) {
     errorMessage.value = (error as Error).message
