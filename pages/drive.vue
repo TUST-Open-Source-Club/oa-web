@@ -26,6 +26,9 @@ const folderStack = ref<Array<{ id: string; name: string }>>([])
 const newFolderName = ref('')
 const uploading = ref(false)
 const errorMessage = ref('')
+const showTrash = ref(false)
+const trashed = ref<NodeItem[]>([])
+const shareDialog = ref<{ node: NodeItem; password: string; shareId: string; url: string } | null>(null)
 
 const currentParentId = computed(() => folderStack.value.at(-1)?.id ?? '')
 
@@ -48,8 +51,60 @@ async function loadSpaces() {
 /** 加载当前目录内容。 */
 async function loadNodes() {
   if (!spaceId.value) return
+  if (showTrash.value) {
+    trashed.value = await api<NodeItem[]>(`spaces/${spaceId.value}/nodes?trashed=true`)
+    return
+  }
   const query = currentParentId.value ? `?parentId=${currentParentId.value}` : ''
   nodes.value = await api<NodeItem[]>(`spaces/${spaceId.value}/nodes${query}`)
+}
+
+/** 切换回收站视图。 */
+async function toggleTrash() {
+  showTrash.value = !showTrash.value
+  await loadNodes()
+}
+
+/** 从回收站恢复。 */
+async function restore(node: NodeItem) {
+  await api(`spaces/${spaceId.value}/nodes/${node.id}/restore`, { method: 'POST' })
+  await loadNodes()
+}
+
+/** 打开分享对话框。 */
+function openShare(node: NodeItem) {
+  shareDialog.value = { node, password: '', shareId: '', url: '' }
+}
+
+/** 创建分享链接。 */
+async function createShare() {
+  if (!shareDialog.value) return
+  errorMessage.value = ''
+  try {
+    const body: Record<string, unknown> = {}
+    if (shareDialog.value.password.trim()) body.password = shareDialog.value.password.trim()
+    const result = await api<{ id: string; token: string; url: string }>(
+      `spaces/${spaceId.value}/nodes/${shareDialog.value.node.id}/shares`,
+      { method: 'POST', body },
+    )
+    shareDialog.value.shareId = result.id
+    shareDialog.value.url = `${window.location.origin}${result.url}`
+  } catch (error) {
+    errorMessage.value = (error as Error).message
+  }
+}
+
+/** 吊销分享。 */
+async function revokeShare() {
+  if (!shareDialog.value?.shareId) return
+  await api(`spaces/${spaceId.value}/shares/${shareDialog.value.shareId}`, { method: 'DELETE' })
+  shareDialog.value = null
+}
+
+/** 复制分享链接。 */
+async function copyShare() {
+  if (!shareDialog.value?.url) return
+  await navigator.clipboard.writeText(shareDialog.value.url)
 }
 
 /** 进入目录。 */
@@ -172,6 +227,9 @@ onMounted(async () => {
           上传文件
         </label>
         <span v-if="uploading" class="text-sm text-neutral-500">上传中…</span>
+        <Button variant="ghost" size="sm" @click="toggleTrash">
+          {{ showTrash ? '返回文件' : '回收站' }}
+        </Button>
       </div>
 
       <div class="divide-y divide-neutral-100">
@@ -186,10 +244,33 @@ onMounted(async () => {
           </div>
           <div class="flex shrink-0 gap-1">
             <Button v-if="node.kind === 'file'" variant="ghost" size="sm" @click="download(node)">下载</Button>
+            <Button variant="ghost" size="sm" @click="openShare(node)">分享</Button>
             <Button variant="ghost" size="sm" @click="remove(node)">删除</Button>
           </div>
         </div>
-        <p v-if="nodes.length === 0" class="py-4 text-center text-sm text-neutral-400">空目录</p>
+        <p v-if="!showTrash && nodes.length === 0" class="py-4 text-center text-sm text-neutral-400">空目录</p>
+      </div>
+
+      <div v-if="showTrash" class="divide-y divide-neutral-100">
+        <div v-for="node in trashed" :key="node.id" class="flex items-center justify-between py-2 text-sm">
+          <span class="truncate text-neutral-500">{{ node.name }}</span>
+          <Button variant="ghost" size="sm" @click="restore(node)">恢复</Button>
+        </div>
+        <p v-if="trashed.length === 0" class="py-4 text-center text-sm text-neutral-400">回收站为空</p>
+      </div>
+    </Card>
+
+    <Card v-if="shareDialog" class="space-y-3">
+      <h2 class="text-sm font-semibold">分享「{{ shareDialog.node.name }}」</h2>
+      <div class="flex flex-wrap items-center gap-2">
+        <Input v-model="shareDialog.password" type="password" placeholder="访问密码（可选，4~64 位）" class="max-w-60" />
+        <Button v-if="!shareDialog.shareId" size="sm" @click="createShare">生成链接</Button>
+        <template v-else>
+          <code class="max-w-full truncate rounded bg-neutral-100 px-2 py-1 text-xs">{{ shareDialog.url }}</code>
+          <Button size="sm" variant="secondary" @click="copyShare">复制</Button>
+          <Button size="sm" variant="danger" @click="revokeShare">吊销</Button>
+        </template>
+        <Button size="sm" variant="ghost" @click="shareDialog = null">关闭</Button>
       </div>
     </Card>
   </div>

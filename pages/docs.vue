@@ -36,6 +36,8 @@ const draft = ref('')
 const versions = ref<VersionItem[]>([])
 const saving = ref(false)
 const message = ref('')
+const newTitle = ref('')
+const newKind = ref<'page' | 'folder'>('page')
 
 /** 带鉴权的 API 请求。 */
 function api<T>(path: string, options: Record<string, unknown> = {}) {
@@ -61,15 +63,21 @@ async function openPage(node: NodeItem) {
   message.value = ''
 }
 
-/** 新建页面（根目录）。 */
-async function createPage() {
-  const title = window.prompt('页面标题')
+/** 新建页面/文件夹（根目录）。 */
+async function createNode() {
+  const title = newTitle.value.trim()
   if (!title) return
-  await api(`spaces/${spaceId.value}/nodes`, {
-    method: 'POST',
-    body: { kind: 'page', title },
-  })
-  await loadSpaces()
+  message.value = ''
+  try {
+    await api(`spaces/${spaceId.value}/nodes`, {
+      method: 'POST',
+      body: { kind: newKind.value, title },
+    })
+    newTitle.value = ''
+    await loadSpaces()
+  } catch (error) {
+    message.value = (error as Error).message
+  }
 }
 
 /** 保存（乐观锁）。 */
@@ -127,7 +135,17 @@ onMounted(loadSpaces)
         <select v-model="spaceId" class="rounded-[var(--radius-field)] border border-neutral-300 px-3 py-2 text-sm" @change="loadSpaces">
           <option v-for="space in spaces" :key="space.id" :value="space.id">{{ space.name }}</option>
         </select>
-        <Button size="sm" @click="createPage">新建页面</Button>
+        <select v-model="newKind" class="rounded-[var(--radius-field)] border border-neutral-300 px-2 py-2 text-sm">
+          <option value="page">页面</option>
+          <option value="folder">文件夹</option>
+        </select>
+        <input
+          v-model="newTitle"
+          placeholder="标题"
+          class="w-40 rounded-[var(--radius-field)] border border-neutral-300 px-3 py-2 text-sm"
+          @keyup.enter="createNode"
+        />
+        <Button size="sm" @click="createNode">新建</Button>
       </div>
     </div>
 
