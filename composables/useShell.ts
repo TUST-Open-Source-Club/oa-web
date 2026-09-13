@@ -25,6 +25,8 @@ export interface ElectronBridge {
   vendor: string
   clearServer: () => Promise<void>
   notify: (title: string, body: string) => Promise<void>
+  /** 同步未读到托盘/Dock 角标。 */
+  setUnreadCount?: (count: number) => Promise<void>
 }
 
 declare global {
@@ -94,6 +96,13 @@ export function useShell() {
     }
   }
 
+  /** 同步未读角标（桌面壳托盘/Dock）。 */
+  async function setUnreadCount(count: number): Promise<void> {
+    if (win?.clubOA?.setUnreadCount) {
+      await win.clubOA.setUnreadCount(count)
+    }
+  }
+
   /** 获取厂商推送 token（壳内可用）。 */
   async function getPushToken(): Promise<string | null> {
     const bridge = win?.ClubOA
@@ -101,5 +110,15 @@ export function useShell() {
     return (await bridge.pushToken()) ?? null
   }
 
-  return { platform, isShell, isElectron, isMobileShell, isIOSPWA, vendor, switchServer, getPushToken }
+  return {
+    platform,
+    isShell,
+    isElectron,
+    isMobileShell,
+    isIOSPWA,
+    vendor,
+    switchServer,
+    setUnreadCount,
+    getPushToken,
+  }
 }

@@ -20,22 +20,29 @@ function stubEnv(extra: { clubOA?: unknown; ClubOA?: unknown; ua?: string; stand
 }
 
 describe('useShell', () => {
-  it('无 window 时视为浏览器', () => {
+  it('无 window 时视为浏览器', async () => {
     const shell = useShell()
     expect(shell.platform.value).toBe('browser')
     expect(shell.isShell.value).toBe(false)
     expect(shell.vendor.value).toBeNull()
+    await expect(shell.setUnreadCount(1)).resolves.toBeUndefined()
+    await expect(shell.switchServer()).resolves.toBeUndefined()
   })
 
   it('检测 Electron 壳', async () => {
     const clearServer = vi.fn(async () => undefined)
-    stubEnv({ clubOA: { platform: 'electron', vendor: 'desktop', clearServer, notify: vi.fn() } })
+    const setUnreadCount = vi.fn(async () => undefined)
+    stubEnv({
+      clubOA: { platform: 'electron', vendor: 'desktop', clearServer, notify: vi.fn(), setUnreadCount },
+    })
     const shell = useShell()
     expect(shell.platform.value).toBe('electron')
     expect(shell.isShell.value).toBe(true)
     expect(shell.vendor.value).toBe('desktop')
     await shell.switchServer()
     expect(clearServer).toHaveBeenCalledOnce()
+    await shell.setUnreadCount(3)
+    expect(setUnreadCount).toHaveBeenCalledWith(3)
   })
 
   it('检测 Android 壳并读取推送能力', async () => {
