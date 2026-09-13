@@ -8,6 +8,12 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineNuxtConfig({
   compatibilityDate: '2026-09-13',
   devtools: { enabled: false },
+  app: {
+    head: {
+      link: [{ rel: 'manifest', href: '/manifest.webmanifest' }],
+      meta: [{ name: 'theme-color', content: '#4f46e5' }],
+    },
+  },
   modules: ['@pinia/nuxt'],
   css: ['~/assets/css/main.css'],
   vite: {
@@ -23,6 +29,8 @@ export default defineNuxtConfig({
     eventServiceUrl: process.env.EVENT_SERVICE_URL || 'http://localhost:8086',
     public: {
       appName: '社团 OA',
+      // 前端订阅 ntfy（Web Push / WebSocket）用地址
+      ntfyPublicUrl: process.env.NTFY_PUBLIC_URL || 'http://localhost/ntfy',
     },
   },
   typescript: { strict: true },
