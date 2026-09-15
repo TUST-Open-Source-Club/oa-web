@@ -1,7 +1,6 @@
 <script setup lang="ts">
 /** 登录页：账号密码登录（账号由管理员创建）。 */
 import { Button, Card, Input } from '@club-oa/ui'
-import { ApiError } from '@club-oa/core'
 
 definePageMeta({ layout: 'auth' })
 
@@ -24,11 +23,14 @@ async function onSubmit() {
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
     await router.push(redirect)
   } catch (error) {
-    if (error instanceof ApiError) {
-      errorMessage.value =
-        error.code === 'AUTH_PENDING_ACTIVATION' ? '账号待激活，请先完成邮箱激活' : error.message
+    const problem = problemOf(error)
+    const status = (error as { statusCode?: number } | null)?.statusCode
+    if (problem?.code === 'AUTH_PENDING_ACTIVATION') {
+      errorMessage.value = '账号待激活，请先完成邮箱激活'
+    } else if (problem?.code === 'AUTH_INVALID_CREDENTIALS' || status === 401) {
+      errorMessage.value = '用户名或密码错误'
     } else {
-      errorMessage.value = '网络异常，请稍后重试'
+      errorMessage.value = apiErrorMessage(error, '网络异常，请稍后重试')
     }
   } finally {
     loading.value = false

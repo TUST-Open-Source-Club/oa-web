@@ -40,10 +40,13 @@ export async function proxyServiceJson(
       headers: { authorization },
     })
   } catch (error: unknown) {
-    const fetchError = error as { response?: { status?: number }; data?: unknown }
+    const fetchError = error as {
+      response?: { status?: number }
+      data?: { code?: string } | null
+    }
     throw createError({
       statusCode: fetchError.response?.status ?? 502,
-      statusMessage: errorTag,
+      statusMessage: fetchError.data?.code ?? errorTag,
       data: fetchError.data ?? null,
     })
   }

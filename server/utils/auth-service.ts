@@ -21,10 +21,13 @@ export async function callAuthService<T>(
   try {
     return await $fetch<T>(`${base}${path}`, { method: 'POST', body })
   } catch (error: unknown) {
-    const fetchError = error as { response?: { status?: number }; data?: unknown }
+    const fetchError = error as {
+      response?: { status?: number }
+      data?: { code?: string } | null
+    }
     throw createError({
       statusCode: fetchError.response?.status ?? 502,
-      statusMessage: 'AUTH_SERVICE_ERROR',
+      statusMessage: fetchError.data?.code ?? 'AUTH_SERVICE_ERROR',
       data: fetchError.data ?? null,
     })
   }

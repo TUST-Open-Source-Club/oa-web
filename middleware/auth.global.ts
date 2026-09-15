@@ -6,6 +6,8 @@ const publicPages = ['/login', '/activate', '/reset']
 const publicPrefixes = ['/e/', '/s/', '/d/', '/m/']
 
 export default defineNuxtRouteMiddleware(async (to) => {
+  // 服务端渲染时读不到浏览器的刷新 Cookie，交由客户端守卫处理
+  if (import.meta.server) return
   const auth = useAuthStore()
   if (!auth.ready) {
     await auth.restore()

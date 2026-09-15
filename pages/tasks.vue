@@ -148,7 +148,7 @@ async function createTask() {
     createOpen.value = false
     await loadBoard()
   } catch (error) {
-    message.value = (error as Error).message
+    message.value = apiErrorMessage(error)
   } finally {
     creating.value = false
   }
@@ -191,7 +191,7 @@ async function createProject() {
     projectId.value = created.id
     await loadProjects()
   } catch (error) {
-    message.value = (error as Error).message
+    message.value = apiErrorMessage(error)
   }
 }
 
