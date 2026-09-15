@@ -27,6 +27,7 @@ export default defineNuxtConfig({
     docServiceUrl: process.env.DOC_SERVICE_URL || 'http://localhost:8084',
     taskServiceUrl: process.env.TASK_SERVICE_URL || 'http://localhost:8083',
     eventServiceUrl: process.env.EVENT_SERVICE_URL || 'http://localhost:8086',
+    imServiceUrl: process.env.IM_SERVICE_URL || 'http://localhost:8082',
     public: {
       appName: '社团 OA',
       // 前端订阅 ntfy（Web Push / WebSocket）用地址
