@@ -27,6 +27,35 @@ const statusFilter = ref('')
 const message = ref('')
 
 const newEvent = reactive({ slug: '', title: '', capacity: 0, needReview: false, emailVerify: true })
+const origin = ref('')
+const copied = ref(false)
+const qrOpen = ref(false)
+const qrDataUrl = ref('')
+
+/** 报名公开链接。 */
+const shareUrl = computed(() =>
+  selected.value && origin.value ? `${origin.value}/e/${selected.value.slug}` : '',
+)
+
+/** 一键复制报名链接。 */
+async function copyLink() {
+  if (!shareUrl.value) return
+  try {
+    await navigator.clipboard.writeText(shareUrl.value)
+    copied.value = true
+    setTimeout(() => (copied.value = false), 1500)
+  } catch {
+    message.value = '复制失败，请手动复制'
+  }
+}
+
+/** 生成报名二维码。 */
+async function showQr() {
+  if (!shareUrl.value) return
+  const { default: QRCode } = await import('qrcode')
+  qrDataUrl.value = await QRCode.toDataURL(shareUrl.value, { width: 320, margin: 1 })
+  qrOpen.value = true
+}
 
 const selected = computed(() => events.value.find((item) => item.id === selectedId.value) ?? null)
 
@@ -123,7 +152,10 @@ function statusLabel(status: string) {
   )
 }
 
-onMounted(loadEvents)
+onMounted(() => {
+  origin.value = window.location.origin
+  void loadEvents()
+})
 </script>
 
 <template>
@@ -177,7 +209,30 @@ onMounted(loadEvents)
           </div>
         </div>
 
-        <div v-if="stats" class="flex flex-wrap gap-4 rounded bg-neutral-50 px-3 py-2 text-sm">
+        <div
+          class="flex flex-wrap items-center gap-2 rounded-[var(--radius-field)] bg-neutral-50 px-3 py-2 dark:bg-neutral-800/50"
+        >
+          <span class="text-xs text-neutral-400">报名链接</span>
+          <input
+            readonly
+            :value="shareUrl"
+            class="min-w-0 flex-1 bg-transparent text-xs text-neutral-600 outline-none dark:text-neutral-300"
+            @focus="($event.target as HTMLInputElement).select()"
+          />
+          <Button size="sm" variant="secondary" @click="copyLink">
+            {{ copied ? '已复制' : '复制' }}
+          </Button>
+          <Button size="sm" variant="secondary" @click="showQr">二维码</Button>
+          <a
+            :href="shareUrl"
+            target="_blank"
+            class="rounded-[var(--radius-field)] px-2 py-1.5 text-xs text-primary-600 transition hover:bg-primary-50 dark:hover:bg-primary-900/30"
+          >
+            预览
+          </a>
+        </div>
+
+        <div v-if="stats" class="flex flex-wrap gap-4 rounded bg-neutral-50 px-3 py-2 text-sm dark:bg-neutral-800/50">
           <span>总数 {{ stats.total }}</span>
           <span class="text-success-700">已通过 {{ stats.approved }}</span>
           <span class="text-warning-700">待审核 {{ stats.pending }}</span>
@@ -218,5 +273,18 @@ onMounted(loadEvents)
 
       <Card v-else class="text-sm text-neutral-400">选择或创建一个活动</Card>
     </div>
+
+    <AppModal :open="qrOpen" title="报名二维码" @close="qrOpen = false">
+      <div class="flex flex-col items-center gap-3">
+        <img
+          v-if="qrDataUrl"
+          :src="qrDataUrl"
+          alt="报名二维码"
+          class="size-64 rounded-lg border border-neutral-200 bg-white p-2 dark:border-neutral-700"
+        />
+        <p class="break-all text-center text-xs text-neutral-400">{{ shareUrl }}</p>
+        <p class="text-xs text-neutral-400">扫码即可打开报名页，可保存图片后转发</p>
+      </div>
+    </AppModal>
   </div>
 </template>

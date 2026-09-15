@@ -27,6 +27,7 @@ const results = ref<UserItem[]>([])
 const directory = ref<Record<string, UserItem>>({})
 const focused = ref(false)
 const loading = ref(false)
+const activeIndex = ref(-1)
 
 const selectedIds = computed<string[]>(() =>
   Array.isArray(props.modelValue) ? props.modelValue : props.modelValue ? [props.modelValue] : [],
@@ -76,8 +77,27 @@ async function search(q: string) {
     results.value = users.filter(
       (user) => !selectedIds.value.includes(user.id) && !props.excludeIds.includes(user.id),
     )
+    activeIndex.value = results.value.length > 0 ? 0 : -1
   } finally {
     loading.value = false
+  }
+}
+
+/** 键盘导航：上下移动、回车选择、Esc 关闭。 */
+function onKeydown(event: KeyboardEvent) {
+  if (!results.value.length) return
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    activeIndex.value = (activeIndex.value + 1) % results.value.length
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    activeIndex.value = (activeIndex.value - 1 + results.value.length) % results.value.length
+  } else if (event.key === 'Enter') {
+    event.preventDefault()
+    const user = results.value[activeIndex.value]
+    if (user) pick(user)
+  } else if (event.key === 'Escape') {
+    focused.value = false
   }
 }
 
@@ -129,8 +149,9 @@ function remove(id: string) {
     <Input
       v-model="keyword"
       :placeholder="placeholder"
-      @focus="focused = true"
-      @blur="setTimeout(() => (focused = false), 150)"
+      @focusin="focused = true"
+      @focusout="setTimeout(() => (focused = false), 150)"
+      @keydown="onKeydown"
     />
     <div
       v-if="focused && (results.length || loading || keyword.trim())"
@@ -139,10 +160,16 @@ function remove(id: string) {
       <p v-if="loading" class="px-3 py-2 text-xs text-neutral-400">搜索中…</p>
       <p v-else-if="!results.length" class="px-3 py-2 text-xs text-neutral-400">无匹配用户</p>
       <button
-        v-for="user in results"
+        v-for="(user, index) in results"
         :key="user.id"
         type="button"
-        class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-neutral-50 dark:hover:bg-neutral-800"
+        class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition"
+        :class="
+          index === activeIndex
+            ? 'bg-primary-50 dark:bg-primary-900/40'
+            : 'hover:bg-neutral-50 dark:hover:bg-neutral-800'
+        "
+        @mousemove="activeIndex = index"
         @mousedown.prevent="pick(user)"
       >
         <UserAvatar :name="user.nickname" :seed="user.id" size="sm" />

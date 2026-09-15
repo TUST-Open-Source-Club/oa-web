@@ -102,14 +102,23 @@ async function loadMessages(scroll = true) {
   }
 }
 
-/** 打开会话并标记已读。 */
+/** 打开会话并标记已读（上报已读到的最新 seq）。 */
 async function openConversation(id: string) {
   activeId.value = id
   await loadMessages()
   const conversation = conversations.value.find((item) => item.id === id)
-  if (conversation?.unread) {
-    await api(`conversations/${id}/read`, { method: 'POST' }).catch(() => undefined)
-    conversation.unread = 0
+  if (!conversation) return
+  const seq = Math.max(
+    conversation.lastMessage?.seq ?? 0,
+    messages.value[messages.value.length - 1]?.seq ?? 0,
+  )
+  if (conversation.unread > 0 && seq > 0) {
+    try {
+      await api(`conversations/${id}/read`, { method: 'POST', body: { seq } })
+      conversation.unread = 0
+    } catch (err) {
+      error.value = apiErrorMessage(err)
+    }
   }
 }
 
