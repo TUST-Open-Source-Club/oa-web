@@ -21,7 +21,8 @@ export default defineEventHandler(async (event) => {
     const disposition = response.headers.get('content-disposition')
     setResponseHeader(event, 'content-type', contentType)
     if (disposition) setResponseHeader(event, 'content-disposition', disposition)
-    return response._data
+    // 必须显式转 Buffer：ArrayBuffer 直接返回会被 Nitro 序列化成 {}
+    return Buffer.from(response._data as ArrayBuffer)
   } catch (error: unknown) {
     const fetchError = error as { response?: { status?: number } }
     throw createError({ statusCode: fetchError.response?.status ?? 502 })
