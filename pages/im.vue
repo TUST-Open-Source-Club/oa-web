@@ -23,10 +23,19 @@ interface ConversationItem {
   id: string
   type: string
   name: string | null
+  notice?: string | null
+  onlyAdminsSpeak?: boolean
   unread: number
   memberIds: string[]
   lastMessage: MessageItem | null
   updatedAt: string
+}
+/** 群成员行。 */
+interface MemberRow {
+  userId: string
+  role: string
+  mutedUntil: string | null
+  canSpeak: boolean
 }
 
 const auth = useAuthStore()
@@ -53,6 +62,12 @@ const convMenu = reactive<{ open: boolean; x: number; y: number; conversation: C
   y: 0,
   conversation: null,
 })
+const membersOpen = ref(false)
+const members = ref<MemberRow[]>([])
+const groupSettings = reactive({ onlyAdminsSpeak: false, notice: '' })
+const myRole = computed(() => members.value.find((row) => row.userId === auth.user?.id)?.role ?? 'member')
+const isGroupAdmin = computed(() => ['owner', 'admin'].includes(myRole.value))
+const isOwner = computed(() => myRole.value === 'owner')
 
 const active = computed(() => conversations.value.find((item) => item.id === activeId.value) ?? null)
 
@@ -120,6 +135,7 @@ async function openConversation(id: string) {
   await loadMessages()
   const conversation = conversations.value.find((item) => item.id === id)
   if (!conversation) return
+  if (conversation.type === 'group') void loadMembers()
   const seq = Math.max(
     conversation.lastMessage?.seq ?? 0,
     messages.value[messages.value.length - 1]?.seq ?? 0,
@@ -181,6 +197,89 @@ async function createConversation() {
   } catch (err) {
     error.value = (err as Error).message
   }
+}
+
+/** 加载群成员（群聊时）。 */
+async function loadMembers() {
+  if (active.value?.type !== 'group') {
+    members.value = []
+    return
+  }
+  try {
+    members.value = await api<MemberRow[]>(`conversations/${activeId.value}/members`)
+  } catch {
+    members.value = []
+  }
+}
+
+/** 打开群设置面板。 */
+async function openGroupSettings() {
+  if (!active.value || active.value.type !== 'group') return
+  await loadMembers()
+  groupSettings.onlyAdminsSpeak = active.value.onlyAdminsSpeak ?? false
+  groupSettings.notice = active.value.notice ?? ''
+  membersOpen.value = true
+}
+
+/** 保存群设置。 */
+async function saveGroupSettings() {
+  await api(`conversations/${activeId.value}/settings`, {
+    method: 'POST',
+    body: { onlyAdminsSpeak: groupSettings.onlyAdminsSpeak, notice: groupSettings.notice || null },
+  })
+  membersOpen.value = false
+  await loadConversations()
+}
+
+/** 成员是否处于禁言中。 */
+function isMuted(member: MemberRow) {
+  return Boolean(member.mutedUntil && new Date(member.mutedUntil) > new Date())
+}
+
+/** 禁言/解除。 */
+async function muteMember(member: MemberRow, minutes: number | null) {
+  await api(`conversations/${activeId.value}/members/${member.userId}/mute`, {
+    method: 'POST',
+    body: { mutedUntil: minutes ? new Date(Date.now() + minutes * 60_000).toISOString() : null },
+  })
+  await loadMembers()
+}
+
+/** 切换发言白名单。 */
+async function toggleSpeak(member: MemberRow) {
+  await api(`conversations/${activeId.value}/members/${member.userId}/speak`, {
+    method: 'POST',
+    body: { canSpeak: !member.canSpeak },
+  })
+  await loadMembers()
+}
+
+/** 设置/取消管理员。 */
+async function toggleAdmin(member: MemberRow) {
+  await api(`conversations/${activeId.value}/members/${member.userId}/role`, {
+    method: 'POST',
+    body: { role: member.role === 'admin' ? 'member' : 'admin' },
+  })
+  await loadMembers()
+}
+
+/** 转让群主。 */
+async function transferOwner(member: MemberRow) {
+  const name = users.value[member.userId]?.nickname ?? '该成员'
+  if (!window.confirm(`确定把群主转让给「${name}」？你将变为管理员。`)) return
+  await api(`conversations/${activeId.value}/transfer`, { method: 'POST', body: { userId: member.userId } })
+  await loadMembers()
+  await loadConversations()
+}
+
+/** 解散群聊。 */
+async function dissolveGroup() {
+  if (!window.confirm('确定解散该群聊？所有消息会被删除且不可恢复。')) return
+  await api(`conversations/${activeId.value}`, { method: 'DELETE' })
+  membersOpen.value = false
+  activeId.value = ''
+  messages.value = []
+  await loadConversations()
 }
 
 /** 打开消息右键菜单。 */
@@ -324,12 +423,20 @@ onUnmounted(() => {
       <template v-if="active">
         <header class="flex items-center gap-3 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
           <UserAvatar :name="titleOf(active)" :seed="active.id" />
-          <div class="min-w-0">
+          <div class="min-w-0 flex-1">
             <h2 class="truncate text-sm font-semibold">{{ titleOf(active) }}</h2>
             <p class="text-xs text-neutral-400">
               {{ active.type === 'group' ? `${active.memberIds.length} 位成员` : '私聊' }}
             </p>
           </div>
+          <button
+            v-if="active.type === 'group'"
+            class="rounded-[var(--radius-field)] p-1.5 text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800"
+            title="群设置"
+            @click="openGroupSettings"
+          >
+            <AppIcon name="settings" class="size-4.5" />
+          </button>
         </header>
         <div ref="listEl" class="flex-1 space-y-3 overflow-y-auto px-4 py-4">
           <div
@@ -408,13 +515,72 @@ onUnmounted(() => {
         复制文本
       </button>
       <button
-        v-if="msgMenu.message.senderId === auth.user?.id || ['owner', 'admin'].includes(active?.memberIds.includes(auth.user?.id ?? '') ? '' : '')"
+        v-if="msgMenu.message.senderId === auth.user?.id || isGroupAdmin"
         class="block w-full px-3 py-1.5 text-left text-danger-500 hover:bg-danger-50 dark:hover:bg-danger-500/10"
         @click="recallMessage(msgMenu.message!)"
       >
         撤回
       </button>
     </div>
+
+    <AppModal :open="membersOpen" title="群设置" width="max-w-lg" @close="membersOpen = false">
+      <div class="space-y-4">
+        <label class="flex items-center justify-between text-sm">
+          <span>仅管理员/白名单可发言</span>
+          <input v-model="groupSettings.onlyAdminsSpeak" type="checkbox" :disabled="!isGroupAdmin" />
+        </label>
+        <label class="block text-sm">
+          <span class="mb-1 block text-xs text-neutral-500">群公告</span>
+          <textarea
+            v-model="groupSettings.notice"
+            rows="2"
+            :disabled="!isGroupAdmin"
+            class="w-full rounded-[var(--radius-field)] border border-neutral-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-primary-500 disabled:opacity-60 dark:border-neutral-700"
+          />
+        </label>
+
+        <div>
+          <h3 class="mb-2 text-xs font-semibold text-neutral-500">成员（{{ members.length }}）</h3>
+          <div class="space-y-1.5">
+            <div
+              v-for="member in members"
+              :key="member.userId"
+              class="flex flex-wrap items-center gap-2 rounded-[var(--radius-field)] border border-neutral-200 px-2.5 py-1.5 text-sm dark:border-neutral-700"
+            >
+              <UserAvatar :name="users[member.userId]?.nickname" :seed="member.userId" size="sm" />
+              <span class="min-w-0 flex-1 truncate">
+                {{ users[member.userId]?.nickname ?? member.userId }}
+                <span v-if="member.role === 'owner'" class="ml-1 rounded bg-primary-50 px-1 text-[10px] text-primary-700 dark:bg-primary-900/40">群主</span>
+                <span v-else-if="member.role === 'admin'" class="ml-1 rounded bg-info-50 px-1 text-[10px] text-info-700 dark:bg-info-500/10">管理员</span>
+                <span v-if="isMuted(member)" class="ml-1 text-[10px] text-danger-500">已禁言</span>
+                <span v-else-if="!member.canSpeak" class="ml-1 text-[10px] text-warning-700">白名单</span>
+              </span>
+              <template v-if="isGroupAdmin && member.role !== 'owner' && member.userId !== auth.user?.id">
+                <button class="text-xs text-neutral-500 hover:text-primary-600" @click="isMuted(member) ? muteMember(member, null) : muteMember(member, 60)">
+                  {{ isMuted(member) ? '解除禁言' : '禁言 1 小时' }}
+                </button>
+                <button class="text-xs text-neutral-500 hover:text-primary-600" @click="toggleSpeak(member)">
+                  {{ member.canSpeak ? '移出白名单' : '允许发言' }}
+                </button>
+                <button v-if="isOwner" class="text-xs text-neutral-500 hover:text-primary-600" @click="toggleAdmin(member)">
+                  {{ member.role === 'admin' ? '取消管理员' : '设为管理员' }}
+                </button>
+                <button v-if="isOwner" class="text-xs text-neutral-500 hover:text-primary-600" @click="transferOwner(member)">转让群主</button>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="isOwner" class="rounded-[var(--radius-field)] border border-danger-200 p-3 dark:border-danger-500/30">
+          <p class="text-xs text-neutral-500">解散群聊将删除全部消息与成员关系，不可恢复。</p>
+          <Button variant="danger" size="sm" class="mt-2" @click="dissolveGroup">解散群聊</Button>
+        </div>
+      </div>
+      <template #footer>
+        <Button variant="secondary" @click="membersOpen = false">关闭</Button>
+        <Button v-if="isGroupAdmin" @click="saveGroupSettings">保存设置</Button>
+      </template>
+    </AppModal>
 
     <AppModal :open="createOpen" title="发起会话" @close="createOpen = false">
       <UserPicker v-model="pickedIds" multiple :exclude-ids="[auth.user?.id ?? '']" placeholder="搜索并选择成员（可多选）" />
