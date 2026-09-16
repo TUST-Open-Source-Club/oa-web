@@ -41,6 +41,18 @@ const listEl = ref<HTMLElement | null>(null)
 const createOpen = ref(false)
 const pickedIds = ref<string[]>([])
 const groupName = ref('')
+const msgMenu = reactive<{ open: boolean; x: number; y: number; message: MessageItem | null }>({
+  open: false,
+  x: 0,
+  y: 0,
+  message: null,
+})
+const convMenu = reactive<{ open: boolean; x: number; y: number; conversation: ConversationItem | null }>({
+  open: false,
+  x: 0,
+  y: 0,
+  conversation: null,
+})
 
 const active = computed(() => conversations.value.find((item) => item.id === activeId.value) ?? null)
 
@@ -171,6 +183,58 @@ async function createConversation() {
   }
 }
 
+/** 打开消息右键菜单。 */
+function openMsgMenu(event: MouseEvent, message: MessageItem) {
+  msgMenu.open = true
+  msgMenu.x = event.clientX
+  msgMenu.y = event.clientY
+  msgMenu.message = message
+  convMenu.open = false
+}
+
+/** 打开会话右键菜单。 */
+function openConvMenu(event: MouseEvent, conversation: ConversationItem) {
+  convMenu.open = true
+  convMenu.x = event.clientX
+  convMenu.y = event.clientY
+  convMenu.conversation = conversation
+  msgMenu.open = false
+}
+
+/** 关闭所有右键菜单。 */
+function closeMenus() {
+  msgMenu.open = false
+  convMenu.open = false
+}
+
+/** 复制消息文本。 */
+async function copyMessage(message: MessageItem) {
+  await navigator.clipboard.writeText(message.content?.text ?? '')
+  closeMenus()
+}
+
+/** 撤回消息（服务端校验仅本人或群管理员可撤回）。 */
+async function recallMessage(message: MessageItem) {
+  try {
+    await api(`conversations/${activeId.value}/messages/${message.id}/recall`, { method: 'POST' })
+    await loadMessages()
+  } catch (err) {
+    error.value = apiErrorMessage(err)
+  } finally {
+    closeMenus()
+  }
+}
+
+/** 会话标记已读。 */
+async function markConversationRead(conversation: ConversationItem) {
+  const seq = conversation.lastMessage?.seq ?? 0
+  if (seq > 0) {
+    await api(`conversations/${conversation.id}/read`, { method: 'POST', body: { seq } }).catch(() => undefined)
+    conversation.unread = 0
+  }
+  closeMenus()
+}
+
 /** 时间显示（今天显示时分，否则日期）。 */
 function timeOf(value: string) {
   const date = new Date(value)
@@ -190,13 +254,17 @@ function previewOf(conversation: ConversationItem) {
 
 let pollTimer: ReturnType<typeof setInterval> | undefined
 onMounted(async () => {
+  window.addEventListener('click', closeMenus)
   await loadConversations()
   pollTimer = setInterval(() => {
     void loadConversations().catch(() => undefined)
     void loadMessages(false).catch(() => undefined)
   }, 4000)
 })
-onUnmounted(() => clearInterval(pollTimer))
+onUnmounted(() => {
+  clearInterval(pollTimer)
+  window.removeEventListener('click', closeMenus)
+})
 </script>
 
 <template>
@@ -220,6 +288,7 @@ onUnmounted(() => clearInterval(pollTimer))
               : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'
           "
           @click="openConversation(conversation.id)"
+          @contextmenu.prevent="openConvMenu($event, conversation)"
         >
           <UserAvatar
             :name="titleOf(conversation)"
@@ -276,6 +345,7 @@ onUnmounted(() => clearInterval(pollTimer))
             />
             <div
               class="max-w-[70%] rounded-2xl px-3.5 py-2 text-sm"
+              @contextmenu.prevent="openMsgMenu($event, message)"
               :class="
                 message.senderId === auth.user?.id
                   ? 'rounded-br-sm bg-primary-600 text-white'
@@ -313,6 +383,38 @@ onUnmounted(() => clearInterval(pollTimer))
         选择左侧会话开始聊天
       </div>
     </section>
+
+    <div
+      v-if="convMenu.open && convMenu.conversation"
+      class="fixed z-50 w-36 overflow-hidden rounded-[var(--radius-field)] border border-neutral-200 bg-white py-1 text-sm shadow-[var(--shadow-pop)] dark:border-neutral-700 dark:bg-neutral-900"
+      :style="{ left: `${convMenu.x}px`, top: `${convMenu.y}px` }"
+      @click.stop
+    >
+      <button class="block w-full px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800" @click="openConversation(convMenu.conversation!.id); closeMenus()">
+        打开
+      </button>
+      <button class="block w-full px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800" @click="markConversationRead(convMenu.conversation!)">
+        标记已读
+      </button>
+    </div>
+
+    <div
+      v-if="msgMenu.open && msgMenu.message"
+      class="fixed z-50 w-36 overflow-hidden rounded-[var(--radius-field)] border border-neutral-200 bg-white py-1 text-sm shadow-[var(--shadow-pop)] dark:border-neutral-700 dark:bg-neutral-900"
+      :style="{ left: `${msgMenu.x}px`, top: `${msgMenu.y}px` }"
+      @click.stop
+    >
+      <button class="block w-full px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800" @click="copyMessage(msgMenu.message!)">
+        复制文本
+      </button>
+      <button
+        v-if="msgMenu.message.senderId === auth.user?.id || ['owner', 'admin'].includes(active?.memberIds.includes(auth.user?.id ?? '') ? '' : '')"
+        class="block w-full px-3 py-1.5 text-left text-danger-500 hover:bg-danger-50 dark:hover:bg-danger-500/10"
+        @click="recallMessage(msgMenu.message!)"
+      >
+        撤回
+      </button>
+    </div>
 
     <AppModal :open="createOpen" title="发起会话" @close="createOpen = false">
       <UserPicker v-model="pickedIds" multiple :exclude-ids="[auth.user?.id ?? '']" placeholder="搜索并选择成员（可多选）" />
