@@ -28,6 +28,7 @@ const message = ref('')
 const errorMessage = ref('')
 
 const newEvent = reactive({ slug: '', title: '', capacity: 0, needReview: false, emailVerify: true })
+const createOpen = ref(false)
 const origin = ref('')
 const copied = ref(false)
 const qrOpen = ref(false)
@@ -126,6 +127,7 @@ async function createEvent() {
     await api('events', { method: 'POST', body: { ...newEvent } })
     newEvent.slug = ''
     newEvent.title = ''
+    createOpen.value = false
     await loadEvents()
   } catch (error) {
     message.value = (error as Error).message
@@ -194,21 +196,14 @@ onMounted(() => {
 
 <template>
   <div class="space-y-4">
-    <h1 class="text-xl font-semibold">活动报名</h1>
+    <div class="flex items-center justify-between gap-2">
+      <h1 class="text-xl font-semibold">活动报名</h1>
+      <Button size="sm" @click="createOpen = true">
+        <AppIcon name="plus" class="size-4" /> 新建活动
+      </Button>
+    </div>
     <p v-if="message || errorMessage" role="alert" class="text-sm text-danger-500">{{ errorMessage || message }}</p>
 
-    <Card class="flex flex-wrap items-end gap-2">
-      <Input v-model="newEvent.slug" placeholder="slug（小写/数字/-）" class="max-w-44" />
-      <Input v-model="newEvent.title" placeholder="活动标题" class="max-w-56" />
-      <Input v-model.number="newEvent.capacity" type="number" placeholder="名额（0=不限）" class="max-w-36" />
-      <label class="flex items-center gap-1 text-sm">
-        <input v-model="newEvent.needReview" type="checkbox" /> 需审核
-      </label>
-      <label class="flex items-center gap-1 text-sm">
-        <input v-model="newEvent.emailVerify" type="checkbox" /> 邮箱验证
-      </label>
-      <Button size="sm" @click="createEvent">创建活动</Button>
-    </Card>
 
     <div class="grid gap-4 lg:grid-cols-[260px_1fr]">
       <Card class="space-y-2">
@@ -308,6 +303,37 @@ onMounted(() => {
 
       <Card v-else class="text-sm text-neutral-400">选择或创建一个活动</Card>
     </div>
+
+    <AppModal :open="createOpen" title="新建活动" @close="createOpen = false">
+      <div class="space-y-3">
+        <label class="block text-sm">
+          <span class="mb-1 block text-xs text-neutral-500">标题</span>
+          <Input v-model="newEvent.title" placeholder="活动标题" />
+        </label>
+        <label class="block text-sm">
+          <span class="mb-1 block text-xs text-neutral-500">slug（报名链接 /e/&lt;slug&gt;）</span>
+          <Input v-model="newEvent.slug" placeholder="小写字母/数字/-" />
+        </label>
+        <label class="block text-sm">
+          <span class="mb-1 block text-xs text-neutral-500">名额</span>
+          <input
+            v-model.number="newEvent.capacity"
+            type="number"
+            min="0"
+            class="w-full rounded-[var(--radius-field)] border border-neutral-300 bg-transparent px-3 py-2 text-sm dark:border-neutral-700"
+            placeholder="0 = 不限"
+          />
+        </label>
+        <div class="flex gap-4 text-sm">
+          <label class="flex items-center gap-1.5"><input v-model="newEvent.needReview" type="checkbox" /> 需审核</label>
+          <label class="flex items-center gap-1.5"><input v-model="newEvent.emailVerify" type="checkbox" /> 邮箱验证</label>
+        </div>
+      </div>
+      <template #footer>
+        <Button variant="secondary" @click="createOpen = false">取消</Button>
+        <Button :disabled="!newEvent.title.trim() || !newEvent.slug.trim()" @click="createEvent">创建</Button>
+      </template>
+    </AppModal>
 
     <AppModal :open="formOpen" title="报名表单设计" width="max-w-2xl" @close="formOpen = false">
       <FormBuilder v-model="formSchema" />

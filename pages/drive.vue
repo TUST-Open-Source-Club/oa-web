@@ -32,6 +32,12 @@ const uploading = ref(false)
 const uploadTotal = ref(0)
 const uploadDone = ref(0)
 const dragging = ref(false)
+const menu = reactive<{ open: boolean; x: number; y: number; node: NodeItem | null }>({
+  open: false,
+  x: 0,
+  y: 0,
+  node: null,
+})
 
 const createSpaceOpen = ref(false)
 const newSpaceName = ref('')
@@ -223,6 +229,33 @@ async function restoreNode(node: NodeItem) {
   await loadNodes()
 }
 
+/** 打开右键菜单。 */
+function openMenu(event: MouseEvent, node: NodeItem) {
+  menu.open = true
+  menu.x = event.clientX
+  menu.y = event.clientY
+  menu.node = node
+}
+
+/** 关闭右键菜单。 */
+function closeMenu() {
+  menu.open = false
+  menu.node = null
+}
+
+/** 菜单动作后关闭。 */
+function runMenu(action: () => void) {
+  action()
+  closeMenu()
+}
+
+/** 打开节点（目录进入，文件预览/下载）。 */
+function openNode(node: NodeItem) {
+  if (node.kind === 'folder') return void openFolder(node)
+  if (canPreview(node)) return preview(node)
+  return void download(node)
+}
+
 /** 打开分享弹窗。 */
 async function openShare(node: NodeItem) {
   shareNode.value = node
@@ -304,9 +337,11 @@ function formatSize(size: number) {
 }
 
 onMounted(async () => {
+  window.addEventListener('click', closeMenu)
   await loadSpaces()
   await loadNodes()
 })
+onUnmounted(() => window.removeEventListener('click', closeMenu))
 </script>
 
 <template>
@@ -438,6 +473,7 @@ onMounted(async () => {
               v-for="node in filteredNodes"
               :key="node.id"
               class="group cursor-pointer rounded-[var(--radius-card)] border border-neutral-200 p-3 transition hover:-translate-y-0.5 hover:border-primary-300 hover:shadow-[var(--shadow-card)] dark:border-neutral-800 dark:hover:border-primary-700"
+              @contextmenu.prevent="openMenu($event, node)"
               @dblclick="node.kind === 'folder' ? openFolder(node) : canPreview(node) ? preview(node) : download(node)"
             >
               <div class="flex items-start justify-between">
@@ -494,6 +530,7 @@ onMounted(async () => {
               v-for="node in filteredNodes"
               :key="node.id"
               class="group flex items-center gap-3 py-2 text-sm"
+              @contextmenu.prevent="openMenu($event, node)"
             >
               <span class="flex size-8 shrink-0 items-center justify-center rounded-lg" :class="fileStyle(node).class">
                 <AppIcon :name="fileStyle(node).icon" class="size-4" />
@@ -531,6 +568,41 @@ onMounted(async () => {
       >
         松开鼠标上传到当前目录
       </div>
+    </div>
+
+    <div
+      v-if="menu.open && menu.node"
+      class="fixed z-50 w-40 overflow-hidden rounded-[var(--radius-field)] border border-neutral-200 bg-white py-1 text-sm shadow-[var(--shadow-pop)] dark:border-neutral-700 dark:bg-neutral-900"
+      :style="{ left: `${menu.x}px`, top: `${menu.y}px` }"
+      @click.stop
+    >
+      <button
+        v-if="menu.node.kind === 'folder' || canPreview(menu.node)"
+        class="block w-full px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800"
+        @click="runMenu(() => openNode(menu.node!))"
+      >
+        {{ menu.node.kind === 'folder' ? '打开' : '预览' }}
+      </button>
+      <button
+        v-if="menu.node.kind === 'file'"
+        class="block w-full px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800"
+        @click="runMenu(() => download(menu.node!))"
+      >
+        下载
+      </button>
+      <button
+        class="block w-full px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800"
+        @click="runMenu(() => openShare(menu.node!))"
+      >
+        分享
+      </button>
+      <div class="my-1 border-t border-neutral-100 dark:border-neutral-800" />
+      <button
+        class="block w-full px-3 py-1.5 text-left text-danger-500 hover:bg-danger-50 dark:hover:bg-danger-500/10"
+        @click="runMenu(() => removeNode(menu.node!))"
+      >
+        删除
+      </button>
     </div>
 
     <!-- 新建空间 -->

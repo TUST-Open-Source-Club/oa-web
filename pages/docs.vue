@@ -42,6 +42,7 @@ const outlineOpen = ref(true)
 const historyOpen = ref(false)
 const editorRoot = ref<HTMLElement | null>(null)
 const editorRef = ref<{ getMarkdown?: () => string; failed?: boolean } | null>(null)
+const editing = ref(false)
 
 const createOpen = ref(false)
 const createKind = ref<'page' | 'folder'>('page')
@@ -82,6 +83,7 @@ async function openPage(node: NodeItem) {
   savedTip.value = ''
   current.value = await api<NodeDetail>(`spaces/${spaceId.value}/nodes/${node.id}`)
   draft.value = current.value.contentMd
+  editing.value = false
   versions.value = await api<VersionItem[]>(`spaces/${spaceId.value}/nodes/${node.id}/versions`)
 }
 
@@ -117,6 +119,8 @@ async function save() {
       { method: 'PUT', body: { contentMd: draft.value, baseVersion: current.value.version } },
     )
     current.value.version = result.version
+    current.value.contentMd = draft.value
+    editing.value = false
     savedTip.value = `已保存 v${result.version}`
     versions.value = await api<VersionItem[]>(`spaces/${spaceId.value}/nodes/${current.value.id}/versions`)
     await loadTree()
@@ -125,6 +129,13 @@ async function save() {
   } finally {
     saving.value = false
   }
+}
+
+/** 取消编辑，恢复为服务端内容。 */
+function cancelEdit() {
+  if (!current.value) return
+  draft.value = current.value.contentMd
+  editing.value = false
 }
 
 /** 回滚历史版本。 */
@@ -296,7 +307,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             >
               <AppIcon name="settings" class="size-4.5" />
             </button>
-            <Button size="sm" :loading="saving" @click="save">保存</Button>
+            <template v-if="editing">
+              <Button size="sm" variant="secondary" @click="cancelEdit">取消</Button>
+              <Button size="sm" :loading="saving" @click="save">保存</Button>
+            </template>
+            <Button v-else size="sm" @click="editing = true">编辑</Button>
           </div>
         </div>
 
@@ -310,9 +325,15 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                 v{{ current.version }} · Ctrl/Cmd + S 保存
               </p>
               <div ref="editorRoot">
-                <MarkdownEditor :key="current.id" ref="editorRef" :model-value="draft" @update:model-value="draft = $event" />
+                <MarkdownEditor
+                  :key="`${current.id}-${editing ? 'edit' : 'view'}`"
+                  ref="editorRef"
+                  :model-value="draft"
+                  :readonly="!editing"
+                  @update:model-value="draft = $event"
+                />
               </div>
-              <details class="mt-6 text-xs text-neutral-400">
+              <details v-if="editing" class="mt-6 text-xs text-neutral-400">
                 <summary class="cursor-pointer">纯文本回退</summary>
                 <textarea
                   v-model="draft"

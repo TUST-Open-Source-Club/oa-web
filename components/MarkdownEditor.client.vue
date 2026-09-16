@@ -6,7 +6,7 @@
 import { onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import '@milkdown/kit/prose/view/style/prosemirror.css'
 
-const props = defineProps<{ modelValue: string }>()
+const props = withDefaults(defineProps<{ modelValue: string; readonly?: boolean }>(), { readonly: false })
 const emit = defineEmits<{
   (event: 'update:modelValue', value: string): void
   (event: 'failed'): void
@@ -24,7 +24,7 @@ let commands: Record<string, { key: unknown }> = {}
 onMounted(async () => {
   if (!root.value) return
   try {
-    const [{ Editor, rootCtx, defaultValueCtx }, { commonmark }, { listener, listenerCtx }, utils, preset] =
+    const [{ Editor, rootCtx, defaultValueCtx, editorViewOptionsCtx }, { commonmark }, { listener, listenerCtx }, utils, preset] =
       await Promise.all([
         import('@milkdown/kit/core'),
         import('@milkdown/kit/preset/commonmark'),
@@ -50,6 +50,7 @@ onMounted(async () => {
       .config((ctx) => {
         ctx.set(rootCtx, root.value as HTMLElement)
         ctx.set(defaultValueCtx, props.modelValue)
+        ctx.set(editorViewOptionsCtx, { editable: () => !props.readonly })
         ctx.get(listenerCtx).markdownUpdated((_, markdown) => {
           latest = markdown
           emit('update:modelValue', markdown)
@@ -102,7 +103,7 @@ defineExpose({
 <template>
   <div class="milkdown-shell overflow-hidden rounded-[var(--radius-field)] border border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
     <div
-      v-if="ready"
+      v-if="ready && !readonly"
       ref="toolbar"
       class="flex flex-wrap items-center gap-0.5 border-b border-neutral-200 bg-neutral-50 px-2 py-1.5 dark:border-neutral-700 dark:bg-neutral-800/60"
     >
