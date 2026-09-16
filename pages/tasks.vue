@@ -51,6 +51,8 @@ const draft = reactive({
   dueAt: '',
 })
 const membersOpen = ref(false)
+const projectOpen = ref(false)
+const projectNameDraft = ref('')
 const memberIds = ref<string[]>([])
 const attachments = ref<AttachmentItem[]>([])
 const uploadingAttachment = ref(false)
@@ -278,6 +280,39 @@ async function createProject() {
   }
 }
 
+/** 打开项目设置。 */
+function openProjectSettings() {
+  projectNameDraft.value = projects.value.find((item) => item.id === projectId.value)?.name ?? ''
+  projectOpen.value = true
+}
+
+/** 保存项目名称。 */
+async function saveProject() {
+  const name = projectNameDraft.value.trim()
+  if (!name) return
+  try {
+    await api(`projects/${projectId.value}`, { method: 'PATCH', body: { name } })
+    projectOpen.value = false
+    await loadProjects()
+  } catch (error) {
+    message.value = apiErrorMessage(error)
+  }
+}
+
+/** 删除项目（级联删除任务）。 */
+async function deleteProject() {
+  const name = projects.value.find((item) => item.id === projectId.value)?.name ?? ''
+  if (!window.confirm(`确定删除项目「${name}」？其中所有任务都会被删除。`)) return
+  try {
+    await api(`projects/${projectId.value}`, { method: 'DELETE' })
+    projectOpen.value = false
+    projectId.value = ''
+    await loadProjects()
+  } catch (error) {
+    message.value = apiErrorMessage(error)
+  }
+}
+
 /** 打开成员管理。 */
 function openMembers() {
   const ids = [...new Set(tasks.value.flatMap((task) => task.assigneeIds ?? []))]
@@ -313,6 +348,7 @@ onMounted(loadProjects)
         <Input v-model="newProjectName" placeholder="新项目名称" class="max-w-40" />
         <Button variant="secondary" size="sm" @click="createProject">新建项目</Button>
         <Button v-if="projectId" variant="secondary" size="sm" @click="openMembers">成员</Button>
+        <Button v-if="projectId" variant="secondary" size="sm" @click="openProjectSettings">项目设置</Button>
         <Button v-if="projectId" size="sm" @click="openCreate()">
           <AppIcon name="plus" class="size-4" /> 新建任务
         </Button>
@@ -519,6 +555,24 @@ onMounted(loadProjects)
       <template #footer>
         <Button variant="secondary" @click="taskOpen = false">取消</Button>
         <Button :disabled="!draft.title.trim() || saving" @click="saveTask">{{ saving ? '保存中…' : '保存' }}</Button>
+      </template>
+    </AppModal>
+
+    <!-- 项目设置 -->
+    <AppModal :open="projectOpen" title="项目设置" @close="projectOpen = false">
+      <div class="space-y-3">
+        <label class="block text-sm">
+          <span class="mb-1 block text-xs text-neutral-500">项目名称</span>
+          <Input v-model="projectNameDraft" @keyup.enter="saveProject" />
+        </label>
+        <div class="rounded-[var(--radius-field)] border border-danger-200 p-3 dark:border-danger-500/30">
+          <p class="text-xs text-neutral-500">删除项目会连同其看板列、任务、附件一并删除，且不可恢复。</p>
+          <Button variant="danger" size="sm" class="mt-2" @click="deleteProject">删除项目</Button>
+        </div>
+      </div>
+      <template #footer>
+        <Button variant="secondary" @click="projectOpen = false">取消</Button>
+        <Button :disabled="!projectNameDraft.trim()" @click="saveProject">保存</Button>
       </template>
     </AppModal>
 
