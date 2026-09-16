@@ -69,6 +69,22 @@ async function loadTree() {
   if (spaceId.value) tree.value = await api<NodeItem[]>(`spaces/${spaceId.value}/tree`)
 }
 
+/** 删除当前知识库（仅空间管理员）。 */
+async function removeSpace() {
+  if (!spaceId.value) return
+  const space = spaces.value.find((item) => item.id === spaceId.value)
+  if (!window.confirm(`确定删除知识库「${space?.name ?? ''}」？其中所有文档都会被删除。`)) return
+  try {
+    await api(`spaces/${spaceId.value}`, { method: 'DELETE' })
+    spaceId.value = ''
+    current.value = null
+    draft.value = ''
+    await loadSpaces()
+  } catch (error) {
+    errorMessage.value = apiErrorMessage(error, '删除失败（仅空间管理员可删除）')
+  }
+}
+
 /** 切换空间。 */
 async function switchSpace() {
   current.value = null
@@ -225,7 +241,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   <div class="flex h-[calc(100vh-7.5rem)] gap-4">
     <!-- 文档树 -->
     <aside class="hidden w-64 shrink-0 flex-col rounded-[var(--radius-card)] border border-neutral-200 bg-white shadow-[var(--shadow-card)] md:flex dark:border-neutral-800 dark:bg-neutral-900">
-      <div class="border-b border-neutral-200 px-3 py-2.5 dark:border-neutral-800">
+      <div class="flex items-center gap-1 border-b border-neutral-200 px-3 py-2.5 dark:border-neutral-800">
         <select
           v-model="spaceId"
           class="w-full rounded-[var(--radius-field)] border border-neutral-200 bg-transparent px-2 py-1.5 text-sm font-medium outline-none dark:border-neutral-700"
@@ -233,6 +249,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         >
           <option v-for="space in spaces" :key="space.id" :value="space.id">{{ space.name }}</option>
         </select>
+        <button
+          class="shrink-0 rounded p-1.5 text-neutral-400 transition hover:bg-danger-50 hover:text-danger-500 dark:hover:bg-danger-500/10"
+          title="删除知识库"
+          @click="removeSpace"
+        >
+          <AppIcon name="logout" class="size-4" />
+        </button>
       </div>
       <div class="px-3 py-2">
         <div class="relative">
