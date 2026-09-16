@@ -18,6 +18,7 @@ interface TaskItem {
   priority: string
 }
 interface UserItem { id: string; username: string; nickname: string; department: string | null }
+interface AttachmentItem { id: string; name: string; size: number; mime: string; createdAt: string }
 
 const auth = useAuthStore()
 const projects = ref<ProjectItem[]>([])
@@ -51,6 +52,8 @@ const draft = reactive({
 })
 const membersOpen = ref(false)
 const memberIds = ref<string[]>([])
+const attachments = ref<AttachmentItem[]>([])
+const uploadingAttachment = ref(false)
 
 /** 带鉴权请求。 */
 function api<T>(path: string, options: Record<string, unknown> = {}) {
@@ -144,6 +147,7 @@ function openEdit(task: TaskItem) {
     startAt: toLocalInput(task.startAt),
     dueAt: toLocalInput(task.dueAt),
   })
+  attachments.value = []
   taskOpen.value = true
 }
 
@@ -203,6 +207,61 @@ async function onDrop(columnId: string) {
   if (!task || task.columnId === columnId) return
   await api(`tasks/${task.id}/move`, { method: 'POST', body: { columnId } })
   await loadBoard()
+}
+
+/** 加载附件列表。 */
+async function loadAttachments(taskId: string) {
+  attachments.value = await api<AttachmentItem[]>(`tasks/${taskId}/attachments`)
+}
+
+/** 上传附件。 */
+async function onUploadAttachment(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || !editingId.value) return
+  uploadingAttachment.value = true
+  message.value = ''
+  try {
+    await fetch(
+      `/api/task/upload?taskId=${editingId.value}&name=${encodeURIComponent(file.name)}&mime=${encodeURIComponent(file.type || 'application/octet-stream')}`,
+      { method: 'POST', body: file, headers: auth.authHeaders() },
+    )
+    await loadAttachments(editingId.value)
+  } catch (error) {
+    message.value = apiErrorMessage(error, '附件上传失败')
+  } finally {
+    uploadingAttachment.value = false
+  }
+}
+
+/** 下载附件。 */
+async function downloadAttachment(attachment: AttachmentItem) {
+  const response = await fetch(
+    `/api/task/download?taskId=${editingId.value}&attachmentId=${attachment.id}`,
+    { headers: auth.authHeaders() },
+  )
+  if (!response.ok) return
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = attachment.name
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+/** 删除附件。 */
+async function removeAttachment(attachment: AttachmentItem) {
+  await api(`tasks/${editingId.value}/attachments/${attachment.id}`, { method: 'DELETE' })
+  await loadAttachments(editingId.value)
+}
+
+/** 大小展示。 */
+function formatSize(size: number) {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
 /** 创建项目。 */
@@ -423,6 +482,28 @@ onMounted(loadProjects)
         <div>
           <span class="mb-1 block text-xs text-neutral-500">负责人（可多选）</span>
           <UserPicker v-model="draft.assigneeIds" multiple placeholder="搜索并选择负责人（可留空）" />
+        </div>
+        <div v-if="editingId">
+          <div class="mb-1 flex items-center justify-between">
+            <span class="text-xs text-neutral-500">附件（{{ attachments.length }}）</span>
+            <label class="cursor-pointer text-xs text-primary-600 hover:underline">
+              {{ uploadingAttachment ? '上传中…' : '上传附件' }}
+              <input type="file" class="hidden" :disabled="uploadingAttachment" @change="onUploadAttachment" />
+            </label>
+          </div>
+          <ul v-if="attachments.length" class="space-y-1">
+            <li
+              v-for="attachment in attachments"
+              :key="attachment.id"
+              class="flex items-center justify-between rounded-[var(--radius-field)] border border-neutral-200 px-2.5 py-1.5 text-sm dark:border-neutral-700"
+            >
+              <span class="min-w-0 flex-1 truncate">{{ attachment.name }}</span>
+              <span class="mx-2 shrink-0 text-xs text-neutral-400">{{ formatSize(attachment.size) }}</span>
+              <button class="shrink-0 text-xs text-primary-600 hover:underline" @click="downloadAttachment(attachment)">下载</button>
+              <button class="shrink-0 pl-2 text-xs text-danger-500 hover:underline" @click="removeAttachment(attachment)">删除</button>
+            </li>
+          </ul>
+          <p v-else class="text-xs text-neutral-300">暂无附件（任意类型，单文件 ≤ 50MB）</p>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <label class="block text-sm">
