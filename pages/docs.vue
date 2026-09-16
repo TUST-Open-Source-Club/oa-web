@@ -34,6 +34,7 @@ const tree = ref<NodeItem[]>([])
 const current = ref<NodeDetail | null>(null)
 const draft = ref('')
 const versions = ref<VersionItem[]>([])
+const changes = ref<Array<{ id: string; action: string; createdAt: string }>>([])
 const saving = ref(false)
 const errorMessage = ref('')
 const savedTip = ref('')
@@ -101,6 +102,7 @@ async function openPage(node: NodeItem) {
   draft.value = current.value.contentMd
   editing.value = false
   versions.value = await api<VersionItem[]>(`spaces/${spaceId.value}/nodes/${node.id}/versions`)
+  await loadChanges(node.id)
 }
 
 /** 新建页面/文件夹。 */
@@ -147,7 +149,25 @@ async function save() {
   }
 }
 
-/** 取消编辑，恢复为服务端内容。 */
+/** 加载操作记录。 */
+async function loadChanges(nodeId: string) {
+  try {
+    changes.value = await api(`spaces/${spaceId.value}/nodes/${nodeId}/changes`)
+  } catch {
+    changes.value = []
+  }
+}
+
+/** 撤销一次正文变更。 */
+async function undoChange(change: { id: string }) {
+  await api(`changes/${change.id}/undo`, { method: 'POST' })
+  if (current.value) {
+    current.value = await api<NodeDetail>(`spaces/${spaceId.value}/nodes/${current.value.id}`)
+    draft.value = current.value.contentMd
+    await loadChanges(current.value.id)
+    versions.value = await api<VersionItem[]>(`spaces/${spaceId.value}/nodes/${current.value.id}/versions`)
+  }
+}
 function cancelEdit() {
   if (!current.value) return
   draft.value = current.value.contentMd
@@ -386,6 +406,15 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               <p v-if="outline.length === 0" class="text-xs text-neutral-300">暂无标题</p>
             </template>
             <template v-if="historyOpen">
+              <h2 class="mt-6 mb-2 text-xs font-semibold text-neutral-400">操作记录</h2>
+              <div v-for="change in changes" :key="change.id" class="flex items-center justify-between py-1 text-xs">
+                <span class="text-neutral-500">
+                  {{ change.action === 'update' ? '正文更新' : change.action === 'undo' ? '撤销' : change.action }}
+                  · {{ new Date(change.createdAt).toLocaleString('zh-CN') }}
+                </span>
+                <button class="text-primary-600 hover:underline" @click="undoChange(change)">撤销</button>
+              </div>
+              <p v-if="changes.length === 0" class="text-xs text-neutral-300">暂无记录</p>
               <h2 class="mt-6 mb-2 text-xs font-semibold text-neutral-400">历史版本</h2>
               <div
                 v-for="item in versions"

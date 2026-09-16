@@ -38,6 +38,9 @@ const menu = reactive<{ open: boolean; x: number; y: number; node: NodeItem | nu
   y: 0,
   node: null,
 })
+const changesOpen = ref(false)
+const changes = ref<Array<{ id: string; action: string; createdAt: string }>>([])
+const changesNode = ref<NodeItem | null>(null)
 
 const createSpaceOpen = ref(false)
 const newSpaceName = ref('')
@@ -226,6 +229,26 @@ async function removeNode(node: NodeItem) {
 }
 async function restoreNode(node: NodeItem) {
   await api(`spaces/${spaceId.value}/nodes/${node.id}/restore`, { method: 'POST' })
+  await loadNodes()
+}
+
+/** 打开文件操作记录。 */
+async function openChanges(node: NodeItem) {
+  changesNode.value = node
+  try {
+    changes.value = await api(`spaces/${spaceId.value}/nodes/${node.id}/changes`)
+  } catch {
+    changes.value = []
+  }
+  changesOpen.value = true
+}
+
+/** 撤销删除。 */
+async function undoChange(change: { id: string }) {
+  await api(`changes/${change.id}/undo`, { method: 'POST' })
+  if (changesNode.value) {
+    changes.value = await api(`spaces/${spaceId.value}/nodes/${changesNode.value.id}/changes`).catch(() => [])
+  }
   await loadNodes()
 }
 
@@ -596,6 +619,12 @@ onUnmounted(() => window.removeEventListener('click', closeMenu))
       >
         分享
       </button>
+      <button
+        class="block w-full px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800"
+        @click="runMenu(() => openChanges(menu.node!))"
+      >
+        操作记录
+      </button>
       <div class="my-1 border-t border-neutral-100 dark:border-neutral-800" />
       <button
         class="block w-full px-3 py-1.5 text-left text-danger-500 hover:bg-danger-50 dark:hover:bg-danger-500/10"
@@ -604,6 +633,24 @@ onUnmounted(() => window.removeEventListener('click', closeMenu))
         删除
       </button>
     </div>
+
+    <AppModal :open="changesOpen" title="操作记录" @close="changesOpen = false">
+      <p class="mb-2 truncate text-sm text-neutral-500">{{ changesNode?.name }}</p>
+      <div v-if="changes.length" class="space-y-1.5">
+        <div
+          v-for="change in changes"
+          :key="change.id"
+          class="flex items-center justify-between rounded-[var(--radius-field)] border border-neutral-200 px-2.5 py-1.5 text-sm dark:border-neutral-700"
+        >
+          <span class="text-neutral-500">
+            {{ change.action === 'delete' ? '删除' : change.action === 'undo' ? '撤销' : change.action }}
+            · {{ new Date(change.createdAt).toLocaleString('zh-CN') }}
+          </span>
+          <button class="text-primary-600 hover:underline" @click="undoChange(change)">撤销</button>
+        </div>
+      </div>
+      <p v-else class="text-sm text-neutral-400">暂无操作记录</p>
+    </AppModal>
 
     <!-- 新建空间 -->
     <AppModal :open="createSpaceOpen" title="新建空间" @close="createSpaceOpen = false">

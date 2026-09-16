@@ -34,6 +34,8 @@ const copied = ref(false)
 const qrOpen = ref(false)
 const qrDataUrl = ref('')
 const formOpen = ref(false)
+const changesOpen = ref(false)
+const changes = ref<Array<{ id: string; action: string; createdAt: string }>>([])
 const formSchema = ref<{ version?: number; fields: Array<Record<string, unknown>> }>({ fields: [] })
 const formSaving = ref(false)
 
@@ -54,7 +56,23 @@ async function copyLink() {
   }
 }
 
-/** 打开表单设计器。 */
+/** 打开操作记录。 */
+async function openChanges() {
+  if (!selectedId.value) return
+  try {
+    changes.value = await api(`events/${selectedId.value}/changes`)
+  } catch {
+    changes.value = []
+  }
+  changesOpen.value = true
+}
+
+/** 撤销一次变更。 */
+async function undoChange(change: { id: string }) {
+  await api(`changes/${change.id}/undo`, { method: 'POST' })
+  await loadEvents()
+  await openChanges()
+}
 async function openFormDesigner() {
   if (!selectedId.value) return
   errorMessage.value = ''
@@ -232,6 +250,7 @@ onMounted(() => {
           </div>
           <div class="flex items-center gap-2">
             <Button size="sm" variant="secondary" @click="openFormDesigner">表单设计</Button>
+            <Button size="sm" variant="secondary" @click="openChanges">操作记录</Button>
             <Button size="sm" variant="secondary" @click="toggleStatus">
               {{ selected.status === 'open' ? '关闭报名' : '开放报名' }}
             </Button>
@@ -344,6 +363,23 @@ onMounted(() => {
         <Button variant="secondary" @click="formOpen = false">取消</Button>
         <Button :loading="formSaving" @click="saveForm">保存表单</Button>
       </template>
+    </AppModal>
+
+    <AppModal :open="changesOpen" title="操作记录" @close="changesOpen = false">
+      <div v-if="changes.length" class="space-y-1.5">
+        <div
+          v-for="change in changes"
+          :key="change.id"
+          class="flex items-center justify-between rounded-[var(--radius-field)] border border-neutral-200 px-2.5 py-1.5 text-sm dark:border-neutral-700"
+        >
+          <span class="text-neutral-500">
+            {{ change.action === 'update' ? '编辑' : change.action === 'form' ? '表单变更' : change.action === 'undo' ? '撤销' : change.action }}
+            · {{ new Date(change.createdAt).toLocaleString('zh-CN') }}
+          </span>
+          <button class="text-primary-600 hover:underline" @click="undoChange(change)">撤销</button>
+        </div>
+      </div>
+      <p v-else class="text-sm text-neutral-400">暂无操作记录</p>
     </AppModal>
 
     <AppModal :open="qrOpen" title="报名二维码" @close="qrOpen = false">
