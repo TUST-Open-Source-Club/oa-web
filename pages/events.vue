@@ -25,12 +25,16 @@ const registrations = ref<RegistrationItem[]>([])
 const stats = ref<Record<string, number> | null>(null)
 const statusFilter = ref('')
 const message = ref('')
+const errorMessage = ref('')
 
 const newEvent = reactive({ slug: '', title: '', capacity: 0, needReview: false, emailVerify: true })
 const origin = ref('')
 const copied = ref(false)
 const qrOpen = ref(false)
 const qrDataUrl = ref('')
+const formOpen = ref(false)
+const formSchema = ref<{ version?: number; fields: Array<Record<string, unknown>> }>({ fields: [] })
+const formSaving = ref(false)
 
 /** 报名公开链接。 */
 const shareUrl = computed(() =>
@@ -46,6 +50,36 @@ async function copyLink() {
     setTimeout(() => (copied.value = false), 1500)
   } catch {
     message.value = '复制失败，请手动复制'
+  }
+}
+
+/** 打开表单设计器。 */
+async function openFormDesigner() {
+  if (!selectedId.value) return
+  errorMessage.value = ''
+  try {
+    const response = await api<{ version?: number; schema?: { fields: unknown[] } } & { fields?: unknown[] }>(
+      `events/${selectedId.value}/form`,
+    )
+    const schema = (response.schema ?? response) as { version?: number; fields: Array<Record<string, unknown>> }
+    formSchema.value = { version: schema.version, fields: schema.fields ?? [] }
+    formOpen.value = true
+  } catch (error) {
+    message.value = apiErrorMessage(error)
+  }
+}
+
+/** 保存报名表单。 */
+async function saveForm() {
+  formSaving.value = true
+  errorMessage.value = ''
+  try {
+    await api(`events/${selectedId.value}/form`, { method: 'PUT', body: { fields: formSchema.value.fields } })
+    formOpen.value = false
+  } catch (error) {
+    errorMessage.value = apiErrorMessage(error)
+  } finally {
+    formSaving.value = false
   }
 }
 
@@ -161,7 +195,7 @@ onMounted(() => {
 <template>
   <div class="space-y-4">
     <h1 class="text-xl font-semibold">活动报名</h1>
-    <p v-if="message" role="alert" class="text-sm text-danger-500">{{ message }}</p>
+    <p v-if="message || errorMessage" role="alert" class="text-sm text-danger-500">{{ errorMessage || message }}</p>
 
     <Card class="flex flex-wrap items-end gap-2">
       <Input v-model="newEvent.slug" placeholder="slug（小写/数字/-）" class="max-w-44" />
@@ -202,6 +236,7 @@ onMounted(() => {
             </p>
           </div>
           <div class="flex items-center gap-2">
+            <Button size="sm" variant="secondary" @click="openFormDesigner">表单设计</Button>
             <Button size="sm" variant="secondary" @click="toggleStatus">
               {{ selected.status === 'open' ? '关闭报名' : '开放报名' }}
             </Button>
@@ -273,6 +308,17 @@ onMounted(() => {
 
       <Card v-else class="text-sm text-neutral-400">选择或创建一个活动</Card>
     </div>
+
+    <AppModal :open="formOpen" title="报名表单设计" width="max-w-2xl" @close="formOpen = false">
+      <FormBuilder v-model="formSchema" />
+      <p class="mt-3 text-xs text-neutral-400">
+        提示：key 为 name/email/phone 的字段会自动同步到报名记录的联系信息列。
+      </p>
+      <template #footer>
+        <Button variant="secondary" @click="formOpen = false">取消</Button>
+        <Button :loading="formSaving" @click="saveForm">保存表单</Button>
+      </template>
+    </AppModal>
 
     <AppModal :open="qrOpen" title="报名二维码" @close="qrOpen = false">
       <div class="flex flex-col items-center gap-3">
