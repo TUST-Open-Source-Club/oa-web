@@ -19,6 +19,7 @@ interface TaskItem {
 }
 interface UserItem { id: string; username: string; nickname: string; department: string | null }
 interface AttachmentItem { id: string; name: string; size: number; mime: string; createdAt: string }
+interface ChangeItem { id: string; action: string; actorId: string | null; createdAt: string }
 
 const auth = useAuthStore()
 const projects = ref<ProjectItem[]>([])
@@ -56,6 +57,7 @@ const projectNameDraft = ref('')
 const memberIds = ref<string[]>([])
 const attachments = ref<AttachmentItem[]>([])
 const uploadingAttachment = ref(false)
+const changes = ref<ChangeItem[]>([])
 
 /** 带鉴权请求。 */
 function api<T>(path: string, options: Record<string, unknown> = {}) {
@@ -209,6 +211,27 @@ async function onDrop(columnId: string) {
   if (!task || task.columnId === columnId) return
   await api(`tasks/${task.id}/move`, { method: 'POST', body: { columnId } })
   await loadBoard()
+}
+
+/** 加载操作记录。 */
+async function loadChanges(taskId: string) {
+  try {
+    changes.value = await api<ChangeItem[]>(`tasks/${taskId}/changes`)
+  } catch {
+    changes.value = []
+  }
+}
+
+/** 撤销一次变更。 */
+async function undoChange(change: ChangeItem) {
+  await api(`changes/${change.id}/undo`, { method: 'POST' })
+  await loadBoard()
+  if (editingId.value) await loadChanges(editingId.value)
+}
+
+/** 动作文案。 */
+function actionLabel(action: string) {
+  return ({ update: '编辑', status: '状态变更', delete: '删除', undo: '撤销' } as Record<string, string>)[action] ?? action
 }
 
 /** 加载附件列表。 */
@@ -540,6 +563,22 @@ onMounted(loadProjects)
             </li>
           </ul>
           <p v-else class="text-xs text-neutral-300">暂无附件（任意类型，单文件 ≤ 50MB）</p>
+        </div>
+        <div v-if="editingId">
+          <span class="mb-1 block text-xs text-neutral-500">操作记录（{{ changes.length }}）</span>
+          <ul v-if="changes.length" class="space-y-1">
+            <li
+              v-for="change in changes"
+              :key="change.id"
+              class="flex items-center justify-between rounded-[var(--radius-field)] border border-neutral-200 px-2.5 py-1.5 text-xs dark:border-neutral-700"
+            >
+              <span class="text-neutral-500">
+                {{ actionLabel(change.action) }} · {{ new Date(change.createdAt).toLocaleString('zh-CN') }}
+              </span>
+              <button class="text-primary-600 hover:underline" @click="undoChange(change)">撤销</button>
+            </li>
+          </ul>
+          <p v-else class="text-xs text-neutral-300">暂无操作记录</p>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <label class="block text-sm">
