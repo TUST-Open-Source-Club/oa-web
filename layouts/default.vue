@@ -14,6 +14,7 @@ const navItems = [
   { to: '/events', label: '活动', icon: 'calendar' },
   { to: '/drive', label: '网盘', icon: 'folder' },
   { to: '/notifications', label: '通知', icon: 'bell', badgeKey: 'unread' },
+  { to: '/admin/users', label: '用户管理', icon: 'users', adminOnly: true },
 ]
 
 const mobileOpen = ref(false)
@@ -49,7 +50,7 @@ async function onLogout() {
         </div>
         <nav class="space-y-1">
           <NuxtLink
-            v-for="item in navItems"
+            v-for="item in navItems.filter((nav) => !nav.adminOnly || auth.isAdmin)"
             :key="item.to"
             :to="item.to"
             class="group flex items-center gap-3 rounded-[var(--radius-field)] px-3 py-2 text-sm text-neutral-600 transition hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
